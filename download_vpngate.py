@@ -112,7 +112,7 @@ finally:
     driver.quit()
 
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-zip_filename = f"vpngate-configs-{timestamp}.zip"
+zip_filename = "vpngate-configs.zip"
 with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
     for root, dirs, files in os.walk(DOWNLOAD_DIR):
         for file in files:
