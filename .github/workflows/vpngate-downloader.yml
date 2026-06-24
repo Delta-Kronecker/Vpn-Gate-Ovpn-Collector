@@ -32,7 +32,7 @@ jobs:
         
     - name: Download OVPN configs
       run: |
-        cat > download.py << 'EOF'
+        python << 'PYEOF'
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -142,8 +142,7 @@ try:
 finally:
     print("\nClosing browser...")
     driver.quit()
-EOF
-        python download.py
+PYEOF
         
     - name: Create ZIP archive
       run: |
