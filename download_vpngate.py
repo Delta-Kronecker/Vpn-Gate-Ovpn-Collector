@@ -7,11 +7,13 @@ import time
 import os
 import urllib.request
 import zipfile
+import shutil
 from datetime import datetime
 
 DOWNLOAD_DIR = "ovpn_configs"
-if not os.path.exists(DOWNLOAD_DIR):
-    os.makedirs(DOWNLOAD_DIR)
+if os.path.exists(DOWNLOAD_DIR):
+    shutil.rmtree(DOWNLOAD_DIR)
+os.makedirs(DOWNLOAD_DIR)
 
 chrome_options = Options()
 chrome_options.add_argument("--headless")
@@ -111,8 +113,12 @@ finally:
     print("\nClosing browser...")
     driver.quit()
 
+for f in os.listdir():
+    if f.startswith("vpngate-configs-") and f.endswith(".zip"):
+        os.remove(f)
+
 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-zip_filename = "vpngate-configs.zip"
+zip_filename = f"vpngate-configs-{timestamp}.zip"
 with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
     for root, dirs, files in os.walk(DOWNLOAD_DIR):
         for file in files:
