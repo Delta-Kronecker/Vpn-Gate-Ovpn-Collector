@@ -1,0 +1,160 @@
+name: Download VPN Gate Configs
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+jobs:
+  download-and-zip:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install selenium webdriver-manager
+        
+    - name: Install Chrome
+      run: |
+        wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+        sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable
+        
+    - name: Download OVPN configs
+      run: |
+        cat > download.py << 'EOF'
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+import time
+import os
+import urllib.request
+
+DOWNLOAD_DIR = "ovpn_configs"
+if not os.path.exists(DOWNLOAD_DIR):
+    os.makedirs(DOWNLOAD_DIR)
+
+chrome_options = Options()
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument("--disable-dev-shm-usage")
+chrome_options.add_argument("--disable-gpu")
+chrome_options.add_argument("--window-size=1920,1080")
+
+service = Service()
+driver = webdriver.Chrome(service=service, options=chrome_options)
+
+try:
+    url = "https://www.vpngate.net/en/"
+    print(f"Opening {url} ...")
+    driver.get(url)
+    time.sleep(10)
+    
+    print("Site loaded successfully.\n")
+    
+    ovpn_links = driver.find_elements(By.PARTIAL_LINK_TEXT, "OpenVPN")
+    total_links = len(ovpn_links)
+    print(f"Found {total_links} OpenVPN Config file links.\n")
+    
+    downloaded_files = 0
+    
+    for index in range(total_links):
+        try:
+            ovpn_links = driver.find_elements(By.PARTIAL_LINK_TEXT, "OpenVPN")
+            
+            if index >= len(ovpn_links):
+                print(f"Skipping link {index+1}, no longer available...")
+                continue
+            
+            print(f"\n{'='*60}")
+            print(f"Processing server {index+1} of {total_links}")
+            print(f"{'='*60}")
+            
+            main_window = driver.current_window_handle
+            ovpn_links[index].click()
+            time.sleep(4)
+            
+            all_windows = driver.window_handles
+            if len(all_windows) > 1:
+                driver.switch_to.window(all_windows[-1])
+            
+            download_links = driver.find_elements(By.PARTIAL_LINK_TEXT, "OpenVPN Configuration File")
+            
+            if download_links:
+                print(f"Found {len(download_links)} config files to download:")
+                
+                for dl_link in download_links:
+                    file_url = dl_link.get_attribute("href")
+                    file_text = dl_link.text.strip()
+                    
+                    if file_url and "openvpn_download.aspx" in file_url:
+                        if ".ovpn" in file_url:
+                            filename = file_url.split("/")[-1]
+                            if "?" in filename:
+                                filename = filename.split("?")[-1]
+                            if "&" in filename:
+                                filename = filename.split("&")[-1]
+                        else:
+                            filename = file_text.replace("OpenVPN Configuration File: ", "").replace(" ", "_") + ".ovpn"
+                            filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+                        
+                        filepath = os.path.join(DOWNLOAD_DIR, filename)
+                        
+                        print(f"  Downloading: {filename}")
+                        
+                        try:
+                            urllib.request.urlretrieve(file_url, filepath)
+                            print(f"  Saved to: {filepath}")
+                            downloaded_files += 1
+                        except Exception as e:
+                            print(f"  Download error: {e}")
+            else:
+                print("  No download links found on this page!")
+            
+            driver.back()
+            time.sleep(2)
+            
+        except Exception as e:
+            print(f"  Error processing server {index+1}: {e}")
+            try:
+                driver.get("https://www.vpngate.net/en/")
+                time.sleep(5)
+            except:
+                pass
+            continue
+    
+    print(f"\n{'='*60}")
+    print(f"Download completed!")
+    print(f"Files downloaded: {downloaded_files}")
+    print(f"{'='*60}")
+
+finally:
+    print("\nClosing browser...")
+    driver.quit()
+EOF
+        python download.py
+        
+    - name: Create ZIP archive
+      run: |
+        cd ovpn_configs
+        zip -r ../vpngate-configs-$(date +%Y%m%d-%H%M%S).zip *
+        cd ..
+        
+    - name: Commit and push
+      run: |
+        git config --global user.name 'github-actions[bot]'
+        git config --global user.email 'github-actions[bot]@users.noreply.github.com'
+        git add ovpn_configs/ *.zip
+        git commit -m "Update VPN configs - $(date +%Y-%m-%d_%H:%M:%S)" || echo "No changes to commit"
+        git push
